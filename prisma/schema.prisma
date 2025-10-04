@@ -1,0 +1,169 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String      @id @default(cuid())
+  name      String
+  email     String      @unique
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  templates InterviewTemplate[]
+  sessions  InterviewSession[]
+}
+
+model InterviewTemplate {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  title       String
+  jobRole     String
+  skills      String[] // Array of required skills
+  jobDescription String? @db.Text
+  
+  rounds      InterviewRound[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  sessions    InterviewSession[]
+  
+  @@index([companyId])
+}
+
+model InterviewRound {
+  id          String   @id @default(cuid())
+  templateId  String
+  template    InterviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  
+  name        String   // e.g., "Introduction", "Technical", "HR"
+  order       Int      // Round sequence
+  description String?  @db.Text
+  
+  questions   Question[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([templateId])
+  @@unique([templateId, order])
+}
+
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model Question {
+  id          String   @id @default(cuid())
+  roundId     String
+  round       InterviewRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  
+  text        String   @db.Text
+  difficulty  DifficultyLevel
+  category    String?  // e.g., "algorithms", "system-design", "behavioral"
+  
+  // For tracking usage in sessions
+  answers     Answer[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([roundId, difficulty])
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  resumeUrl String?
+  
+  sessions  InterviewSession[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum SessionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model InterviewSession {
+  id          String   @id @default(cuid())
+  templateId  String
+  template    InterviewTemplate @relation(fields: [templateId], references: [id])
+  
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id])
+  
+  status      SessionStatus @default(PENDING)
+  
+  // Current state
+  currentRoundIndex Int @default(0)
+  currentQuestionIndex Int @default(0)
+  
+  // Selected questions for this session (per round, per difficulty)
+  selectedQuestions Json // Structure: { roundId: { easy: [qId1, qId2], medium: [...], hard: [...] } }
+  
+  // Conversation history
+  transcript  Json[] // Array of { role: 'interviewer' | 'student', text: string, timestamp: DateTime, audioUrl?: string }
+  
+  // Final evaluation
+  overallScore Float?
+  finalReport  String? @db.Text
+  
+  answers     Answer[]
+  
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([companyId])
+  @@index([studentId])
+  @@index([templateId])
+}
+
+model Answer {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id])
+  
+  // Student's response
+  answerText  String   @db.Text
+  audioUrl    String?  // URL to stored audio recording
+  
+  // Evaluation
+  score       Float?   // 0-10 scale
+  feedback    String?  @db.Text
+  strengths   String[] // Array of strength points
+  weaknesses  String[] // Array of improvement areas
+  
+  // Follow-up questions asked during this answer
+  followUpQuestions Json[] // Array of { question: string, answer: string }
+  
+  answeredAt  DateTime @default(now())
+  evaluatedAt DateTime?
+  
+  @@index([sessionId])
+  @@index([questionId])
+}
